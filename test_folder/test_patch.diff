@@ -1,0 +1,460 @@
+Binary files helios_old_B3/.DS_Store and helios/.DS_Store differ
+diff -ruN helios_old_B3/.git/HEAD helios/.git/HEAD
+--- helios_old_B3/.git/HEAD	2019-07-01 16:10:01.000000000 -0700
++++ helios/.git/HEAD	2019-07-01 16:29:05.000000000 -0700
+@@ -1 +1 @@
+-ref: refs/heads/B3_branch
++ref: refs/heads/add_suffix
+Binary files helios_old_B3/.git/index and helios/.git/index differ
+diff -ruN helios_old_B3/.git/logs/HEAD helios/.git/logs/HEAD
+--- helios_old_B3/.git/logs/HEAD	2019-07-01 16:10:01.000000000 -0700
++++ helios/.git/logs/HEAD	2019-07-01 16:29:05.000000000 -0700
+@@ -280,3 +280,4 @@
+ 8276cc403341167aba371a5078e769fbbf78a581 d90f7742305e2747be8aa7a6900cddb08b4a6044 yliu07777 <yawenliu@heliosdata.com> 1562020251 -0700	checkout: moving from B3_branch to add_imei
+ d90f7742305e2747be8aa7a6900cddb08b4a6044 40166003e404d057ed0b746245990a16a5c61864 yliu07777 <yawenliu@heliosdata.com> 1562020260 -0700	checkout: moving from add_imei to label_change_dev
+ 40166003e404d057ed0b746245990a16a5c61864 8276cc403341167aba371a5078e769fbbf78a581 yliu07777 <yawenliu@heliosdata.com> 1562022601 -0700	checkout: moving from label_change_dev to B3_branch
++8276cc403341167aba371a5078e769fbbf78a581 0bb7453e4c3b66e6a8875c32be69de2d204f291a yliu07777 <yawenliu@heliosdata.com> 1562023745 -0700	checkout: moving from B3_branch to add_suffix
+diff -ruN helios_old_B3/helios/app/common/common_utils/config.py helios/helios/app/common/common_utils/config.py
+--- helios_old_B3/helios/app/common/common_utils/config.py	2019-07-01 16:10:01.000000000 -0700
++++ helios/helios/app/common/common_utils/config.py	2019-07-01 16:29:05.000000000 -0700
+@@ -63,7 +63,7 @@
+         self._init_feature_config()
+ 
+     @classmethod
+-    def _load_json_conf_from_zip(cls, file_name, error_message=None):
++    def __load_json_conf_from_zip(cls, file_name, error_message=None):
+         try:
+             with zipfile.ZipFile(cls.config_zip_path) as config_zip:
+                 config_path_in_zip = os.path.join(cls.config_dir_in_zip, file_name)
+@@ -94,9 +94,9 @@
+     @classmethod
+     def _load_config(cls, config_proto, config_file_prefix, config_suffix="_config.json"):
+         conf_name = config_file_prefix + config_suffix
+-        conf = cls._load_json_conf_from_zip(file_name=conf_name,
+-                                            error_message=f'Loading configuration from '
+-                                                          f'{conf_name} failed.')
++        conf = cls.__load_json_conf_from_zip(file_name=conf_name,
++                                             error_message=f'Loading configuration from '
++                                                           f'{conf_name} failed.')
+         if conf:
+             json_format.ParseDict(conf, config_proto)
+         return config_proto
+diff -ruN helios_old_B3/helios/app/common/nlp/en/EngWordClassifier.py helios/helios/app/common/nlp/en/EngWordClassifier.py
+--- helios_old_B3/helios/app/common/nlp/en/EngWordClassifier.py	2019-07-01 16:10:01.000000000 -0700
++++ helios/helios/app/common/nlp/en/EngWordClassifier.py	2019-07-01 16:29:05.000000000 -0700
+@@ -40,6 +40,7 @@
+         self.mar_set = set(const.MARITAL_FIELD_TYPE['ENG'].keys())
+         self.cmp_set = set(const.CMP_FIELD_TYPE['ENG'].keys())
+         self.edu_set = set(const.DEGREE_FIELD_TYPE['ENG'].keys())
++        self.suffix_set = set(const.SUFFIX_FIELD_TYPE['ENG'].keys())
+         self.country_to_cities_map = dict()
+         self.country_to_states_map = dict()
+ 
+@@ -114,6 +115,7 @@
+         self.mar_set = fileloader.mar_set  # e.g. 'divorced', 'married', 'single'
+         self.cmp_set = fileloader.cmp_set  # different ways to call company, e.g. corporation, company
+         self.edu_set = fileloader.edu_set  # degree of education. e.g. 'bachelors', 'masters'
++        self.suffix_set = fileloader.suffix_set  # e.g. 'phd', 'md', 'cfa'
+         self.lang = 'en'
+         self.lowercase_number_set = set(string.digits + string.ascii_lowercase)
+         self.card_company_matcher_dict_luhn, self.card_company_matcher_dict_no_luhn = \
+@@ -368,6 +370,40 @@
+         """
+         return self.url_pattern_primary.match(datum)
+ 
++    def is_suffix(self, datum):
++        """
++        Return true if datum can be a suffix by searching for it in suffix set
++
++        ref_1: https://en.wikipedia.org/wiki/Suffix_(name)
++        ref_2: https://github.com/derek73/python-nameparser/issues/2
++        ref_3: https://careers.blogs.ie.edu/2014/05/adding-mba-after-your-name.html
++
++        The tricky part for this task is that suffix set may heavily overlap with education set.
++        E.g. phd can be used as either education or suffix
++        Following the implementation example in ref_2 and culture tradition discussed in ref_3. people usually
++        use high levels of education or professional occupations as suffixes.
++        And as I understand, they generally do not tend to use B.S. or B.A. as suffixes
++        Thus to reduce the conflict here, we exclude those bachelor and master degrees overlapping
++        with education set from the suffix set such as 'bs', 'ba', 'ms' etc
++
++        confidence level of is_suffix is set to be 100 for now for the purpose of fair comparison and good separation
++        with other classification fields the voting framework
++
++        # TODO Confidence level needs further tuning
++        """
++        return datum in self.suffix_set
++
++    def is_education(self, datum):
++        """
++        Return true if datum can be a education degree like master degree by searching for it in edu set
++
++        confidence level of is_education is set to be 100 for now for the purpose of fair comparison and good separation
++        with other classification fields the voting framework
++
++        # TODO Confidence level needs further tuning
++        """
++        return datum in self.edu_set
++
+     def _numeric_type(self, col, datum):
+         """
+         po box
+@@ -411,10 +447,12 @@
+             self._upvote(col, 'country', 100)
+         if datum in self.cities_set:
+             self._upvote(col, 'city', 100)
+-        if datum in self.edu_set:
++        if self.is_education(datum):
+             self._upvote(col, 'education', 100)
+         if datum in self.job_set:
+             self._upvote(col, 'occupation', 100)
++        if self.is_suffix(datum):
++            self._upvote(col, 'suffix', 100)
+         # remove preceding and trailing non-alphabet chars before tokenizing
+         tmp = datum.strip(string.punctuation + string.digits)
+         tokens = tokenize(tmp)
+@@ -435,8 +473,10 @@
+         education
+         """
+         datum = ''.join(char for char in datum if char.isalpha())
+-        if datum in self.edu_set:
++        if self.is_education(datum):
+             self._upvote(col, 'education', 100)
++        if self.is_suffix(datum):
++            self._upvote(col, 'suffix', 100)
+         # dot_count = datum.count('.')
+         # char_count = datum.count('b') + datum.count('a')
+         # if datum :
+diff -ruN helios_old_B3/helios/app/common/nlp/en/constant.py helios/helios/app/common/nlp/en/constant.py
+--- helios_old_B3/helios/app/common/nlp/en/constant.py	2019-07-01 16:10:01.000000000 -0700
++++ helios/helios/app/common/nlp/en/constant.py	2019-07-01 16:29:05.000000000 -0700
+@@ -44,7 +44,8 @@
+                                'passport',
+                                'car_vin',
+                                'credit_card',
+-                               'web_url']}
++                               'web_url',
++                               'suffix']}
+ 
+ PII_STANDARD_FIELD_MAP = {
+     'ENG': {
+@@ -157,7 +158,8 @@
+         'link': 'web_url',
+         'webpage': 'web_url',
+         'personalpage': 'web_url',
+-        'web': 'web_url'}}
++        'web': 'web_url',
++        'suffix': 'suffix'}}
+ 
+ # Self mapping
+ PII_FIELD_TYPE = {
+@@ -198,7 +200,8 @@
+         'unknown_field': 'ukn',
+         'car_vin': 'seq',
+         'credit_card': 'seq',
+-        'web_url': 'ukn'}}
++        'web_url': 'ukn',
++        'suffix': 'ukn'}}
+ 
+ CMP_FIELD_TYPE = {
+     'ENG': {
+@@ -264,21 +267,79 @@
+         'bachelors': 'bachelors',
+         'b': 'bachelors',
+         'ba': 'bachelors',
++        'bs': 'bachelors',
+         'bsc': 'bachelors',
++        'be': 'bachelors',
++        'bfa': 'bachelors',
++        'btech': 'bachelors',
++        'beng': 'bachelors',
++        'llb': 'bachelors',
+         'masters': 'masters',
+         'm': 'masters',
+         'ma': 'masters',
++        'ms': 'masters',
++        'meng': 'masters',
++        'mba': 'masters',
++        'mla': 'masters',
++        'mfa': 'masters',
++        'llm': 'masters',
+         'msc': 'masters',
+         'doctoral': 'doctoral',
+         'phd': 'doctoral',
+         'philosophy': 'doctoral',
++        'jd': 'doctoral',
++        'md': 'doctoral',
+         'd': 'doctoral',
++        'do': 'doctoral',
++        'dc': 'doctoral',
++        'edd': 'doctoral',
++        'engd': 'doctoral',
+         'p': 'doctoral',
+         'associates': 'associates',
+         'a': 'associates',
+     }
+ }
+ 
++SUFFIX_FIELD_TYPE = {
++    'ENG': {
++        'jd': 'academic',
++        'md': 'academic',
++        'phd': 'academic',
++        'do': 'academic',
++        'edd': 'academic',
++        'engd': 'academic',
++        'dba': 'academic',
++        'dc': 'academic',
++        'kbe': 'honorary',
++        'lld': 'honorary',
++        'dd': 'honorary',
++        'ca': 'professional',
++        'cfa': 'professional',
++        'cpa': 'professional',
++        'esquire': 'professional',
++        'esq': 'professional',
++        'clu': 'professional',
++        'chfc': 'professional',
++        'cfp': 'professional',
++        'pe': 'professional',
++        'pg': 'professional',
++        'cpl': 'professional',
++        'ce': 'professional',
++        'ra': 'professional',
++        'aia': 'professional',
++        'riba': 'professional',
++        'pmp': 'professional',
++        'pt': 'professional',
++        'sr': 'generational',
++        'jr': 'generational',
++        'i': 'generational',
++        'ii': 'generational',
++        'iii': 'generational',
++        'iv': 'generational',
++        'v': 'generational'
++    }
++}
++
+ MARITAL_FIELD_TYPE = {
+     'ENG': {
+         'single': 'single',
+diff -ruN helios_old_B3/helios/app/test/nlp/test_EngWordClassifier.py helios/helios/app/test/nlp/test_EngWordClassifier.py
+--- helios_old_B3/helios/app/test/nlp/test_EngWordClassifier.py	2019-07-01 16:10:01.000000000 -0700
++++ helios/helios/app/test/nlp/test_EngWordClassifier.py	2019-07-01 16:29:05.000000000 -0700
+@@ -95,6 +95,18 @@
+         self.assertDictContainsSubset(classifier._fields, {'sssd': 'sssd', 'css':'css', 'cts':'cts'})
+         self.assertDictContainsSubset(classifier.dump(), {'sssd': 'web_url', 'css':'css', 'cts':'cts'})
+ 
++    def test_suffix(self):
++        # 'sssd' tests cases should be categorized as suffix, 'suffix' gets 5 votes and 'education' gets 3 votes
++        # 'css' tests cases should be considered as education, 'suffix' gets 1 votes and 'education' gets 4 votes
++        # 'cts' tests trivial typos
++        test_input = {'sssd': ['Ph.D.', 'JR.', 'LLB', 'MD', 'CPA', 'iii'],
++                      'css': ['Phd', 'B.S', 'B.A.', 'M.S.'],
++                      'cts': ['phdd', 'jrs', 'srm', 'iiii']}
++        classifier = EngWordClassifier(test_input, 'USA')
++        classifier.action()
++        self.assertDictContainsSubset(classifier._fields, {'sssd': 'sssd', 'css':'css', 'cts':'cts'})
++        self.assertDictContainsSubset(classifier.dump(), {'sssd': 'suffix', 'css':'education', 'cts':'cts'})
++
+     def test_FileLoadSig_singleton(self):
+         count = 0
+         class ExtendedFileLoadSig(FileLoadSig):
+diff -ruN helios_old_B3/helios/app/test/spark_utils/test_config.py helios/helios/app/test/spark_utils/test_config.py
+--- helios_old_B3/helios/app/test/spark_utils/test_config.py	2019-07-01 16:10:01.000000000 -0700
++++ helios/helios/app/test/spark_utils/test_config.py	2019-07-01 16:29:05.000000000 -0700
+@@ -1,44 +1,21 @@
+ import unittest
+ 
+-from google.protobuf import json_format
+-
+ from common.common_utils.config import Config
+-from config_pb2 import ModuleConfig, GlobalConfig, FeatureConfig
+ 
+ class TestConfig(unittest.TestCase):
+-    ##############################################################################
+-    # Set up testing procedure
+-    # 1. make sure folder(file) in the desired path on VM/server.
+-    #       proto_utils     in      /opt/helios/bin
+-    #       log.py          in      /opt/helios/bin/common
+-    #       config.py       in      /opt/helios/bin/common/common_utils
+-    # 2. set PYTHONPATHPATH and run unit test in the path where test_config.py is
+-    #       PYTHONPATH="/opt/helios/protoutils:$PYTHONPATH"
+-    #       PYTHONPATH="/opt/helios/bin:$PYTHONPATH" python3 -m unittest test_config.py
+-    ##############################################################################
+-    class DummyCaller:
+-        def __init__(self, name):
+-            self.__name__ = name
+-    ##############################################################################
+-    # Upon adding/modifying modules/moduole_config_getters,
+-    # module_name_list & module_name_method_dict shall be updated accordingly
+-    ##############################################################################
+-    module_name_list = ['sparkddnanalysis', 'sparkbaselinemonitor', 'sparkddnformation', 'sparkrawdataprocessor']
+-    # dict of {'module_name' : list[getter method_names]}
+-    module_name_method_dict = {'sparkddnanalysis': ['get_spark_ddn_analysis_config'],
+-                               'sparkbaselinemonitor': ['get_spark_baseline_monitor_config', 'get_key_field_rules'],
+-                               'sparkddnformation': ['get_spark_ddn_formation_config'],
+-                               'sparkrawdataprocessor': ['get_spark_raw_data_processor_config',
+-                                                         'get_raw_data_processor_constants',
+-                                                         'get_multihome_detector_config']}
++
+     def test_singleton(self):
++        class DummyCaller:
++            def __init__(self, name):
++                self.__name__ = name
++
+         def dummy_init(self, *args, **kwargs):
+             pass
+         Config.__init__ = dummy_init
+ 
+-        caller_foo = TestConfig.DummyCaller('foo')
+-        caller_foo2 = TestConfig.DummyCaller('foo')
+-        caller_bar = TestConfig.DummyCaller('bar')
++        caller_foo = DummyCaller('foo')
++        caller_foo2 = DummyCaller('foo')
++        caller_bar = DummyCaller('bar')
+         config_foo = Config(caller=caller_foo)
+         config_foo2 = Config(caller=caller_foo2)
+         config_bar = Config(caller=caller_bar)
+@@ -50,75 +27,3 @@
+         self.assertIsNot(config_foo, config_none)
+         self.assertIsNot(config_bar, config_none)
+         self.assertIs(config_none, config_none2)
+-
+-    def test_load_json_zip(self):
+-        """
+-        Test load_json_from_zip method, the lowest level I/O function
+-        """
+-        # Tests for loading global_config and feature_config
+-        conf_json = Config._load_json_conf_from_zip('global_config.json', error_message=None)
+-        self.assertIsNotNone(conf_json)
+-        conf_json = Config._load_json_conf_from_zip('feature_config.json', error_message=None)
+-        self.assertIsNotNone(conf_json)
+-
+-        # Tests for loading configs for individual module
+-        for module_name in self.module_name_list:
+-            conf_json = Config._load_json_conf_from_zip(module_name + '_config.json', error_message=None)
+-            self.assertIsNotNone(conf_json)
+-
+-    def test_load_config(self):
+-        """
+-        Test load_config method, which parse read json strings into protobuf messages
+-        """
+-        # Tests for global_config and feature_config which are the key components
+-        conf_protobuf = Config._load_config(GlobalConfig(), 'global', '_config.json')
+-        self.assertIsNotNone(conf_protobuf)
+-        conf_protobuf = Config._load_config(FeatureConfig(), 'feature', '_config.json')
+-        self.assertIsNotNone(conf_protobuf)
+-
+-        for module_name in self.module_name_list:
+-            conf_protobuf = Config._load_config(ModuleConfig(), module_name, '_config.json')
+-            self.assertIsNotNone(conf_protobuf)
+-
+-    def test_get_global_config(self):
+-        """
+-        Test getters implemented for the global config part
+-        """
+-        dummy_caller = TestConfig.DummyCaller('global')
+-        config = Config(caller=dummy_caller)
+-        ##############################################################################
+-        # Upon adding/modifying global_getter methods
+-        # method_name_list shall be updated accordingly
+-        ##############################################################################
+-        method_name_list = ['get_global_config', 'get_log_schema_map', 'get_memory_monitor_config']
+-        for method_name in method_name_list:
+-            try:
+-                test_method = getattr(config, method_name)
+-                self.assertIsNotNone(test_method())
+-            except AttributeError:
+-                raise NotImplementedError("Global config part does not implement `{}`".format(method_name))
+-
+-    def test_get_feature_config(self):
+-        # To be implemented following test_get_global_config
+-        pass
+-
+-    def test_get_module_config(self):
+-        """
+-        Test all the getter methods for each module
+-        """
+-        for module_name, method_names in self.module_name_method_dict.items():
+-            dummy_caller = TestConfig.DummyCaller(module_name)
+-            config = Config(caller=dummy_caller)
+-            # Test shared module getter methods
+-            self.assertIsNotNone(config.get_spark_conf())
+-            self.assertIsNotNone(config.get_instance())
+-            # Test unique getter methods for each module
+-            # Possible errors: getter method is not implemented or getter returns None as there is no such field name
+-            # associated with individual getter
+-            for method_name in method_names:
+-                try:
+-                    test_method = getattr(config, method_name)
+-                    self.assertIsNotNone(test_method())
+-                except AttributeError:
+-                    raise NotImplementedError("Module `{}` does not implement `{}`" \
+-                                              .format(module_name, method_name))
+diff -ruN helios_old_B3/helios/config/spark_jobs/global_config.default.jsonnet helios/helios/config/spark_jobs/global_config.default.jsonnet
+--- helios_old_B3/helios/config/spark_jobs/global_config.default.jsonnet	2019-07-01 16:10:01.000000000 -0700
++++ helios/helios/config/spark_jobs/global_config.default.jsonnet	2019-07-01 16:29:05.000000000 -0700
+@@ -405,7 +405,8 @@
+         uscis: 35,  // TAGS.USCIS,
+         car_vin: 36,  // TAGS.CAR_VIN,
+         credit_card: 37,  // TAGS.CREDIT_CARD,
+-        web_url: 38  // TAGS.WEB_URL,
++        web_url: 38,  // TAGS.WEB_URL,
++        suffix: 39  // TAGS.SUFFIX,
+     },
+     skip_cassandra: false,
+     data_root_path: '/mnt/cs_data',
+diff -ruN helios_old_B3/helios/config/zzz_json/spark_jobs/dev/global_config.json helios/helios/config/zzz_json/spark_jobs/dev/global_config.json
+--- helios_old_B3/helios/config/zzz_json/spark_jobs/dev/global_config.json	2019-07-01 16:10:01.000000000 -0700
++++ helios/helios/config/zzz_json/spark_jobs/dev/global_config.json	2019-07-01 16:29:05.000000000 -0700
+@@ -462,6 +462,7 @@
+       "sexual_orientation": 34,
+       "social_security_number": 8,
+       "state": 14,
++      "suffix": 39,
+       "union_status": 30,
+       "unknown": 0,
+       "uscis": 35,
+diff -ruN helios_old_B3/helios/config/zzz_json/spark_jobs/prod/global_config.json helios/helios/config/zzz_json/spark_jobs/prod/global_config.json
+--- helios_old_B3/helios/config/zzz_json/spark_jobs/prod/global_config.json	2019-07-01 16:10:01.000000000 -0700
++++ helios/helios/config/zzz_json/spark_jobs/prod/global_config.json	2019-07-01 16:29:05.000000000 -0700
+@@ -462,6 +462,7 @@
+       "sexual_orientation": 34,
+       "social_security_number": 8,
+       "state": 14,
++      "suffix": 39,
+       "union_status": 30,
+       "unknown": 0,
+       "uscis": 35,
+diff -ruN helios_old_B3/helios/protos/data/tags.proto helios/helios/protos/data/tags.proto
+--- helios_old_B3/helios/protos/data/tags.proto	2019-07-01 16:10:01.000000000 -0700
++++ helios/helios/protos/data/tags.proto	2019-07-01 16:29:05.000000000 -0700
+@@ -69,6 +69,7 @@
+     CAR_VIN = 36;
+     CREDIT_CARD = 37;
+     WEB_URL = 38;
++    SUFFIX = 39;
+ }
+ 
+ enum FeatureTag {
+Binary files helios_old_B3/helios/sharing/davos_demo/test_random_forest_model/data/._SUCCESS.crc and helios/helios/sharing/davos_demo/test_random_forest_model/data/._SUCCESS.crc differ
+Binary files helios_old_B3/helios/sharing/davos_demo/test_random_forest_model/metadata/._SUCCESS.crc and helios/helios/sharing/davos_demo/test_random_forest_model/metadata/._SUCCESS.crc differ
+Binary files helios_old_B3/helios/sharing/davos_demo/test_random_forest_model/treesMetadata/._SUCCESS.crc and helios/helios/sharing/davos_demo/test_random_forest_model/treesMetadata/._SUCCESS.crc differ
+diff -ruN helios_old_B3/helios/sharing/gateway/src/controller/api/jobs_impl.js helios/helios/sharing/gateway/src/controller/api/jobs_impl.js
+--- helios_old_B3/helios/sharing/gateway/src/controller/api/jobs_impl.js	2019-07-01 16:10:01.000000000 -0700
++++ helios/helios/sharing/gateway/src/controller/api/jobs_impl.js	2019-07-01 16:29:05.000000000 -0700
+@@ -300,13 +300,6 @@
+       logger.debug(err.toString());
+       jobHelper.updateJobStatus(job, models.Job.STATUS.FAILED, {
+         error: ['Unexpected server error.']
+-      })
+-      .then(function() {
+-        contractHelper.putContractToServer(contract, {
+-          state: models.Contract.STATE.EXEC_READY,
+-          exec_status: models.Job.STATUS.FAILED,
+-          num_processed_blocks: contract.num_processed_blocks
+-        });
+       });
+     });
+   });

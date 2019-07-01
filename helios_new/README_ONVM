@@ -1,0 +1,107 @@
+This readme explain how to config and run bro with onvm plugin.
+The overall structure is on ubuntu VM, run onvm manager which pull packet through dpdk, the packet will map to shared
+memory space. Bro with onvm plugin will run on docker on the VM, it read packet from the shared memory space for process
+that will achieve zero packet copy and use the onvm capability like flow table, service chain etc.
+
+Install:
+
+1. Install a ubuntu:14.04 minimal virtual machine with 4 VMXNET3 intf. Install git.
+
+2. on the working folder git clone https://github.com/jjyy1946/helios.git. The install script and patch was
+   located at helios/helios/bro and helios/helos/bro/plugin_onvm
+
+3. on the wokring folder get in sudo 
+
+4. on the working folder (ex: /home/dev_user here) run  ./helios/helios/bro/install_bro.sh  
+   #step 4 will build dpdk ( include convert 2 interface to dpdk intf)
+           will build onvm lib
+           will build bro
+           will bro_onvm plugin
+
+Now all the build was done it was ready to run
+
+
+1. run onvm_mgr on vm 
+
+   go to work_folder/bro/aux/plugins/onvm_dpdk/src/openNetVM/onvm
+
+   run command go.sh with parameter, first is cpu core (ex core 0 and 1) second is the intf mask (here 3 indicate port 1 and 2)
+ 
+   "./go.sh 0,1 3 "
+
+root@xsun-hdev-63:/home/dev_user/bro/aux/plugins/onvm_dpdk/src/openNetVM/onvm# ./go.sh 0,1 3
+EAL: Detected 3 lcore(s)
+EAL: Multi-process socket /var/run/.rte_unix
+EAL: Probing VFIO support...
+EAL: PCI device 0000:03:00.0 on NUMA socket -1
+EAL:   Invalid NUMA socket, default to 0
+EAL:   probe driver: 15ad:7b0 net_vmxnet3
+EAL: PCI device 0000:0b:00.0 on NUMA socket -1
+EAL:   Invalid NUMA socket, default to 0
+EAL:   probe driver: 15ad:7b0 net_vmxnet3
+EAL: PCI device 0000:13:00.0 on NUMA socket -1
+EAL:   Invalid NUMA socket, default to 0
+EAL:   probe driver: 15ad:7b0 net_vmxnet3
+EAL: PCI device 0000:1b:00.0 on NUMA socket -1
+EAL:   Invalid NUMA socket, default to 0
+EAL:   probe driver: 15ad:7b0 net_vmxnet3
+Creating mbuf pool 'MProc_pktmbuf_pool' [27648 mbufs] ...
+Creating mbuf pool 'NF_INFO_MEMPOOL' ...
+Creating mbuf pool 'NF_MSG_MEMPOOL' ...
+Port 0 init ... 
+Port 0 socket id 0 ... 
+Port 0 Rx rings 1 ... 
+done: 
+Port 1 init ... 
+Port 1 socket id 0 ... 
+Port 1 Rx rings 1 ... 
+done: 
+
+Checking link statusdone
+Port 0 Link Up - speed 10000 Mbps - full-duplex
+Port 1 Link Up - speed 10000 Mbps - full-duplex
+Default service chain: send to sdn NF
+cur_index:1, action:2, destination:1
+
+APP: Finished Process Init.
+APP: 2 cores available in total
+APP: 1 cores available for handling manager RX queues
+APP: 0 cores available for handling TX queues
+APP: 1 cores available for handling stats
+APP: Core 1: Running RX thread for RX queue 0
+APP: Core 0: Running master thread
+
+
+2. lunch docker container 
+     ./docker.sh -h /mnt/huge -b /usr/local/bro -o /home/dev_user/bro/aux/plugins/onvm_dpdk/src/openNetVM/ -n Bridge1 /dev/uio0,/dev/uio1
+
+   here "/home/dev_user/bro/aux/plugins/onvm_dpdk/src/openNetVM/" is the path to the openNetVM. 
+   The Bridge1 is just a name you wish to call the container.
+
+3. In docker, first time you will need install some lib, we will automate it later. 
+
+   apt-get update
+   apt-get install libpcap-dev
+
+4. run the bro on docker:
+
+      cd /usr/local/bro/bin
+      ./bro -i onvm_dpdk::lo
+
+
+
+Rebuild:
+
+   The source code was on the VM /home/dev_user/bro/aux/plugins/onvm_dpdk/src  which include all the plugin code
+   onvm code and dpdk code.
+
+  after modify code redo make in /home/dev_user/bro/aux/plugins/onvm_dpdk the copy lib file to mounted /usr/loca/bro folder which docker can also read.
+
+   dev_user@xsun-hdev-63:~/bro/aux/plugins/onvm_dpdk$ cp build/lib/Bro-ONVM_DPDK.linux-x86_64.so /usr/local/bro/lib/bro/plugins/Bro_ONVM_DPDK/lib/.
+     
+
+
+
+
+
+ 
